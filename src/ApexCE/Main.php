@@ -11,6 +11,7 @@ use pocketmine\command\Command;
 use pocketmine\command\CommandSender;
 use pocketmine\event\entity\EntityDamageByEntityEvent;
 use pocketmine\event\block\BlockBreakEvent;
+use pocketmine\event\inventory\InventoryTransactionEvent;
 use pocketmine\item\VanillaItems;
 use pocketmine\item\Item;
 use pocketmine\item\Pickaxe;
@@ -27,13 +28,21 @@ final class Main extends PluginBase implements Listener{
 
     protected function onEnable(): void{
         $this->saveDefaultConfig();
-        $this->enchants = $this->getConfig()->get("enchants");
+
+        $data = $this->getConfig()->get("enchants");
+        if(!is_array($data)){
+            $this->getLogger()->error("Config 'enchants' section missing or invalid!");
+            $data = [];
+        }
+
+        $this->enchants = $data;
+
         $this->getServer()->getPluginManager()->registerEvents($this, $this);
     }
 
-    /* --------------------------------
-       COMMAND SYSTEM
-    -------------------------------- */
+    /* =======================================================
+       COMMANDS
+    ======================================================== */
 
     public function onCommand(CommandSender $sender, Command $command, string $label, array $args): bool{
 
@@ -71,11 +80,92 @@ final class Main extends PluginBase implements Listener{
         return true;
     }
 
-    /* --------------------------------
-       ENCHANT STORAGE (NBT)
-    -------------------------------- */
+    /* =======================================================
+       BOOK CREATION
+    ======================================================== */
+
+    private function createBook(string $name, int $level): Item{
+
+        $book = VanillaItems::ENCHANTED_BOOK();
+        $book->setCustomName("§r§6$name $level");
+
+        $success = $this->enchants[$name]["success"] ?? 100;
+        $destroy = $this->enchants[$name]["destroy"] ?? 0;
+
+        $book->setLore([
+            "§7Enchantment Book",
+            "§eEnchant: §6$name",
+            "§eLevel: §6$level",
+            "§aSuccess Rate: $success%",
+            "§cDestroy Rate: $destroy%",
+            "§7Click onto an item to apply"
+        ]);
+
+        $nbt = new CompoundTag();
+        $nbt->setString("ce_book", $name);
+        $nbt->setInt("ce_level", $level);
+        $book->setNamedTag($nbt);
+
+        return $book;
+    }
+
+    /* =======================================================
+       APPLY BOOK SYSTEM
+    ======================================================== */
+
+    public function onInventoryTransaction(InventoryTransactionEvent $event): void{
+
+        $transaction = $event->getTransaction();
+        $player = $transaction->getSource();
+
+        if(!$player instanceof Player) return;
+
+        foreach($transaction->getActions() as $action){
+
+            $sourceItem = $action->getSourceItem();
+            $targetItem = $action->getTargetItem();
+
+            if($sourceItem->getNamedTag()->getTag("ce_book") !== null){
+
+                $name = $sourceItem->getNamedTag()->getString("ce_book");
+                $level = $sourceItem->getNamedTag()->getInt("ce_level");
+
+                if($targetItem->isNull()) return;
+
+                $event->cancel();
+
+                $successRate = $this->enchants[$name]["success"] ?? 100;
+                $destroyRate = $this->enchants[$name]["destroy"] ?? 0;
+
+                $player->getInventory()->removeItem($sourceItem);
+
+                if(mt_rand(1,100) <= $successRate){
+
+                    $this->applyEnchant($targetItem, $name, $level);
+                    $player->getInventory()->addItem($targetItem);
+                    $player->sendMessage("§aEnchant applied successfully!");
+
+                }else{
+
+                    if(mt_rand(1,100) <= $destroyRate){
+                        $player->sendMessage("§cEnchant failed and item destroyed!");
+                    }else{
+                        $player->getInventory()->addItem($targetItem);
+                        $player->sendMessage("§cEnchant failed!");
+                    }
+                }
+
+                return;
+            }
+        }
+    }
+
+    /* =======================================================
+       NBT + LORE SYSTEM
+    ======================================================== */
 
     private function applyEnchant(Item &$item, string $name, int $level): void{
+
         $nbt = $item->getNamedTag();
         $list = $nbt->getListTag("ApexCE") ?? new ListTag();
 
@@ -86,9 +176,12 @@ final class Main extends PluginBase implements Listener{
         $list->push($tag);
         $nbt->setTag("ApexCE", $list);
         $item->setNamedTag($nbt);
+
+        $this->updateLore($item);
     }
 
     private function getEnchants(Item $item): array{
+
         $nbt = $item->getNamedTag();
         $list = $nbt->getListTag("ApexCE");
         if(!$list) return [];
@@ -100,51 +193,36 @@ final class Main extends PluginBase implements Listener{
         return $enchants;
     }
 
-    /* --------------------------------
-       BOOK SYSTEM
-    -------------------------------- */
+    private function updateLore(Item &$item): void{
 
-    private function createBook(string $name, int $level): Item{
-        $book = VanillaItems::ENCHANTED_BOOK();
-        $book->setCustomName("§6$name $level");
+        $lore = [];
+        foreach($this->getEnchants($item) as $name => $level){
+            $lore[] = "§r§6$name $level";
+        }
 
-        $lore = [
-            "§7Success: ".$this->enchants[$name]["success"]."%",
-            "§cDestroy: ".$this->enchants[$name]["destroy"]."%"
-        ];
-        $book->setLore($lore);
-
-        $nbt = new CompoundTag();
-        $nbt->setString("ce_name", $name);
-        $nbt->setInt("ce_level", $level);
-        $book->setNamedTag($nbt);
-
-        return $book;
+        $item->setLore($lore);
     }
 
-    /* --------------------------------
+    /* =======================================================
        COMBAT ENCHANTS
-    -------------------------------- */
+    ======================================================== */
 
     public function onDamage(EntityDamageByEntityEvent $event): void{
+
         $damager = $event->getDamager();
         if(!$damager instanceof Player) return;
 
         $enchants = $this->getEnchants($damager->getInventory()->getItemInHand());
 
-        // Lifesteal
         if(isset($enchants["Lifesteal"])){
-            $level = $enchants["Lifesteal"];
-            if(mt_rand(1,100) <= $level * 10){
-                $heal = 1 + $level;
+            if(mt_rand(1,100) <= $enchants["Lifesteal"] * 10){
+                $heal = 1 + $enchants["Lifesteal"];
                 $damager->setHealth(min($damager->getMaxHealth(), $damager->getHealth() + $heal));
             }
         }
 
-        // Lightning
         if(isset($enchants["Lightning"])){
-            $level = $enchants["Lightning"];
-            if(mt_rand(1,100) <= 15 * $level){
+            if(mt_rand(1,100) <= 15 * $enchants["Lightning"]){
                 $world = $damager->getWorld();
                 $pos = $event->getEntity()->getPosition();
                 $world->addSound($pos, new ThunderSound());
@@ -153,11 +231,12 @@ final class Main extends PluginBase implements Listener{
         }
     }
 
-    /* --------------------------------
-       BLOCK ENCHANTS
-    -------------------------------- */
+    /* =======================================================
+       BLOCK ENCHANTS (SAFE)
+    ======================================================== */
 
     public function onBreak(BlockBreakEvent $event): void{
+
         $player = $event->getPlayer();
         if($player->isCreative()) return;
 
@@ -165,17 +244,20 @@ final class Main extends PluginBase implements Listener{
         $item = $player->getInventory()->getItemInHand();
         $enchants = $this->getEnchants($item);
 
-        /* ---- TreeDestroyer ---- */
+        // TreeDestroyer
         if(isset($enchants["TreeDestroyer"]) && $block instanceof Wood){
 
             $event->cancel();
 
             for($y = 0; $y < 50; $y++){
+
                 $pos = $block->getPosition()->add(0,$y,0);
                 $b = $player->getWorld()->getBlock($pos);
+
                 if(!$b instanceof Wood) break;
 
-                foreach($b->getDrops($item) as $drop){
+                $drops = $b->getDrops($item);
+                foreach($drops as $drop){
                     $player->getInventory()->addItem($drop);
                 }
 
@@ -184,13 +266,13 @@ final class Main extends PluginBase implements Listener{
             return;
         }
 
-        /* ---- Driller ---- */
+        // SAFE DRILLER
         if(isset($enchants["Driller"]) && $item instanceof Pickaxe){
 
             $event->cancel();
 
             $level = $enchants["Driller"];
-            $radius = $level >= 3 ? 2 : 1; // lvl3 = 5x5, others 3x3
+            $radius = $level >= 3 ? 2 : 1;
 
             $center = $block->getPosition();
             $world = $player->getWorld();
@@ -201,14 +283,16 @@ final class Main extends PluginBase implements Listener{
                     $pos = $center->add($x, 0, $z);
                     $target = $world->getBlock($pos);
 
-                    if($target->getHardness() > 0){
+                    if($target->isAir()) continue;
 
-                        foreach($target->getDrops($item) as $drop){
-                            $player->getInventory()->addItem($drop);
-                        }
+                    $drops = $target->getDrops($item);
+                    if(count($drops) === 0) continue;
 
-                        $world->setBlock($pos, VanillaBlocks::AIR());
+                    foreach($drops as $drop){
+                        $player->getInventory()->addItem($drop);
                     }
+
+                    $world->setBlock($pos, VanillaBlocks::AIR());
                 }
             }
         }

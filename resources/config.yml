@@ -1,0 +1,21 @@
+enchants:
+
+  Lifesteal:
+    max-level: 3
+    success: 80
+    destroy: 10
+
+  Lightning:
+    max-level: 2
+    success: 70
+    destroy: 15
+
+  TreeDestroyer:
+    max-level: 3
+    success: 90
+    destroy: 5
+
+  Driller:
+    max-level: 3
+    success: 85
+    destroy: 5

@@ -43,29 +43,24 @@ final class Main extends PluginBase implements Listener{
     /* ===========================
        COMMANDS
     ============================ */
-    public function onCommand(CommandSender $sender, Command $command, string $label, array $args): bool{
+    public function onCommand(CommandSender $sender, Command $command, string $label, array $args): bool {
 
-        if(count($args) === 0){
-            $sender->sendMessage("§cUsage: /$label give <player> <enchant> <level> OR /$label givebook <player> <enchant> <level>");
-            return false;
-        }
-
-        switch(strtolower($args[0])){
+        switch(strtolower($command->getName())){
 
             case "give":
-                if(count($args) < 4){
+                if(count($args) < 3){
                     $sender->sendMessage("§cUsage: /give <player> <enchant> <level>");
                     return false;
                 }
 
-                $target = $this->getServer()->getPlayerExact($args[1]);
+                $target = $this->getServer()->getPlayerExact($args[0]);
                 if(!$target){
                     $sender->sendMessage("§cPlayer not found!");
                     return false;
                 }
 
-                $enchant = $args[2];
-                $level = (int)$args[3];
+                $enchant = $args[1];
+                $level = (int)$args[2];
 
                 $item = $target->getInventory()->getItemInHand();
                 $this->applyEnchant($item, $enchant, $level);
@@ -75,19 +70,19 @@ final class Main extends PluginBase implements Listener{
             break;
 
             case "givebook":
-                if(count($args) < 4){
+                if(count($args) < 3){
                     $sender->sendMessage("§cUsage: /givebook <player> <enchant> <level>");
                     return false;
                 }
 
-                $target = $this->getServer()->getPlayerExact($args[1]);
+                $target = $this->getServer()->getPlayerExact($args[0]);
                 if(!$target){
                     $sender->sendMessage("§cPlayer not found!");
                     return false;
                 }
 
-                $enchant = $args[2];
-                $level = (int)$args[3];
+                $enchant = $args[1];
+                $level = (int)$args[2];
 
                 $book = $this->createBook($enchant, $level);
                 $target->getInventory()->addItem($book);
@@ -96,7 +91,7 @@ final class Main extends PluginBase implements Listener{
             break;
 
             default:
-                $sender->sendMessage("§cUnknown subcommand.");
+                $sender->sendMessage("§cUnknown command.");
                 return false;
         }
 

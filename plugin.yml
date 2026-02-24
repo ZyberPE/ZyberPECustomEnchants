@@ -1,0 +1,16 @@
+name: ApexCE
+main: ApexCE\Main
+version: 1.0.0
+api: 5.0.0
+author: ApexPELegitz
+description: OP Custom Enchants system (Single File)
+
+commands:
+  ce:
+    description: Custom Enchant admin command
+    permission: apexce.admin
+
+permissions:
+  apexce.admin:
+    description: Allows use of /ce commands
+    default: op

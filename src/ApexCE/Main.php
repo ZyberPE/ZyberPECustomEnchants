@@ -16,6 +16,8 @@ use pocketmine\item\VanillaItems;
 use pocketmine\item\Item;
 use pocketmine\item\Pickaxe;
 use pocketmine\block\Wood;
+use pocketmine\block\Air;
+use pocketmine\block\Bedrock;
 use pocketmine\block\VanillaBlocks;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\ListTag;
@@ -28,15 +30,7 @@ final class Main extends PluginBase implements Listener{
 
     protected function onEnable(): void{
         $this->saveDefaultConfig();
-
-        $data = $this->getConfig()->get("enchants");
-        if(!is_array($data)){
-            $this->getLogger()->error("Config 'enchants' section missing or invalid!");
-            $data = [];
-        }
-
-        $this->enchants = $data;
-
+        $this->enchants = $this->getConfig()->get("enchants", []);
         $this->getServer()->getPluginManager()->registerEvents($this, $this);
     }
 
@@ -102,13 +96,10 @@ final class Main extends PluginBase implements Listener{
        BOOK CREATION
     ============================ */
     private function createBook(string $name, int $level): Item{
-
         $book = VanillaItems::ENCHANTED_BOOK();
         $book->setCustomName("§r§6$name $level");
-
         $success = $this->enchants[$name]["success"] ?? 100;
         $destroy = $this->enchants[$name]["destroy"] ?? 0;
-
         $book->setLore([
             "§7Enchantment Book",
             "§eEnchant: §6$name",
@@ -117,12 +108,10 @@ final class Main extends PluginBase implements Listener{
             "§cDestroy Rate: $destroy%",
             "§7Click onto an item to apply"
         ]);
-
         $nbt = new CompoundTag();
         $nbt->setString("ce_book", $name);
         $nbt->setInt("ce_level", $level);
         $book->setNamedTag($nbt);
-
         return $book;
     }
 
@@ -130,40 +119,35 @@ final class Main extends PluginBase implements Listener{
        APPLY BOOK SYSTEM
     ============================ */
     public function onInventoryTransaction(InventoryTransactionEvent $event): void{
-
         $transaction = $event->getTransaction();
         $player = $transaction->getSource();
-
         if(!$player instanceof Player) return;
 
         foreach($transaction->getActions() as $action){
-
             $sourceItem = $action->getSourceItem();
             $targetItem = $action->getTargetItem();
-
             if($sourceItem->getNamedTag()->getTag("ce_book") !== null){
-
                 $name = $sourceItem->getNamedTag()->getString("ce_book");
                 $level = $sourceItem->getNamedTag()->getInt("ce_level");
-
                 if($targetItem->isNull()) return;
-
                 $event->cancel();
 
                 $successRate = $this->enchants[$name]["success"] ?? 100;
                 $destroyRate = $this->enchants[$name]["destroy"] ?? 0;
 
+                // Remove book
                 $player->getInventory()->removeItem($sourceItem);
 
                 if(mt_rand(1,100) <= $successRate){
                     $this->applyEnchant($targetItem, $name, $level);
-                    $player->getInventory()->addItem($targetItem);
+                    $player->getInventory()->setItemInHand($targetItem);
                     $player->sendMessage("§aEnchant applied successfully!");
                 }else{
                     if(mt_rand(1,100) <= $destroyRate){
                         $player->sendMessage("§cEnchant failed and item destroyed!");
+                        $player->getInventory()->removeItem($targetItem);
                     }else{
-                        $player->getInventory()->addItem($targetItem);
+                        $player->getInventory()->setItemInHand($targetItem);
                         $player->sendMessage("§cEnchant failed!");
                     }
                 }
@@ -173,30 +157,25 @@ final class Main extends PluginBase implements Listener{
     }
 
     /* ===========================
-       NBT + LORE SYSTEM
+       NBT + LORE + GLOW SYSTEM
     ============================ */
     private function applyEnchant(Item &$item, string $name, int $level): void{
-
         $nbt = $item->getNamedTag();
         $list = $nbt->getListTag("ApexCE") ?? new ListTag();
-
         $tag = new CompoundTag();
         $tag->setString("name", $name);
         $tag->setInt("level", $level);
-
         $list->push($tag);
         $nbt->setTag("ApexCE", $list);
         $item->setNamedTag($nbt);
-
         $this->updateLore($item);
+        $item->addEnchantment(VanillaItems::ENCHANTED_BOOK()->getEnchantment()); // glow effect
     }
 
     private function getEnchants(Item $item): array{
-
         $nbt = $item->getNamedTag();
         $list = $nbt->getListTag("ApexCE");
         if(!$list) return [];
-
         $enchants = [];
         foreach($list as $tag){
             $enchants[$tag->getString("name")] = $tag->getInt("level");
@@ -205,12 +184,10 @@ final class Main extends PluginBase implements Listener{
     }
 
     private function updateLore(Item &$item): void{
-
         $lore = [];
         foreach($this->getEnchants($item) as $name => $level){
             $lore[] = "§r§6$name $level";
         }
-
         $item->setLore($lore);
     }
 
@@ -218,7 +195,6 @@ final class Main extends PluginBase implements Listener{
        COMBAT ENCHANTS
     ============================ */
     public function onDamage(EntityDamageByEntityEvent $event): void{
-
         $damager = $event->getDamager();
         if(!$damager instanceof Player) return;
 
@@ -242,10 +218,9 @@ final class Main extends PluginBase implements Listener{
     }
 
     /* ===========================
-       BLOCK ENCHANTS (SAFE)
+       BLOCK ENCHANTS
     ============================ */
     public function onBreak(BlockBreakEvent $event): void{
-
         $player = $event->getPlayer();
         if($player->isCreative()) return;
 
@@ -255,34 +230,24 @@ final class Main extends PluginBase implements Listener{
 
         // TreeDestroyer
         if(isset($enchants["TreeDestroyer"]) && $block instanceof Wood){
-
             $event->cancel();
-
             for($y = 0; $y < 50; $y++){
-
                 $pos = $block->getPosition()->add(0,$y,0);
                 $b = $player->getWorld()->getBlock($pos);
-
                 if(!$b instanceof Wood) break;
-
-                $drops = $b->getDrops($item);
-                foreach($drops as $drop){
+                foreach($b->getDrops($item) as $drop){
                     $player->getInventory()->addItem($drop);
                 }
-
                 $player->getWorld()->setBlock($pos, VanillaBlocks::AIR());
             }
             return;
         }
 
-        // SAFE Driller
+        // Driller
         if(isset($enchants["Driller"]) && $item instanceof Pickaxe){
-
             $event->cancel();
-
             $level = $enchants["Driller"];
-            $radius = $level >= 3 ? 2 : 1;
-
+            $radius = $level + 1; // 1->2x2, 2->3x3, 3->4x4
             $center = $block->getPosition();
             $world = $player->getWorld();
 
@@ -295,14 +260,12 @@ final class Main extends PluginBase implements Listener{
                 "Deepslate Emerald Ore","Deepslate Redstone Ore","Deepslate Lapis Ore"
             ];
 
-            for($x = -$radius; $x <= $radius; $x++){
-                for($z = -$radius; $z <= $radius; $z++){
-
+            for($x=-$radius;$x<=$radius;$x++){
+                for($z=-$radius;$z<=$radius;$z++){
                     $pos = $center->add($x,0,$z);
                     $target = $world->getBlock($pos);
-
-                    if($target->isAir()) continue;
-                    if($target instanceof \pocketmine\block\Bedrock) continue;
+                    if($target instanceof Air) continue;
+                    if($target instanceof Bedrock) continue;
                     if(!in_array($target->getName(), $breakableBlocks, true)) continue;
 
                     $drops = [];
@@ -313,6 +276,14 @@ final class Main extends PluginBase implements Listener{
                     }
 
                     foreach($drops as $drop){
+                        // AutoSmelt
+                        if(isset($enchants["AutoSmelt"])){
+                            $dropName = $drop->getName();
+                            $smelted = $this->autoSmelt($dropName);
+                            if($smelted !== null){
+                                $drop = $smelted;
+                            }
+                        }
                         $player->getInventory()->addItem($drop);
                     }
 
@@ -320,5 +291,17 @@ final class Main extends PluginBase implements Listener{
                 }
             }
         }
+    }
+
+    private function autoSmelt(string $dropName): ?Item{
+        return match($dropName){
+            "Iron Ore" => VanillaItems::IRON_INGOT(),
+            "Gold Ore" => VanillaItems::GOLD_INGOT(),
+            "Copper Ore" => VanillaItems::COPPER_INGOT(),
+            "Diamond Ore" => VanillaItems::DIAMOND(),
+            "Emerald Ore" => VanillaItems::EMERALD(),
+            "Coal Ore" => VanillaItems::COAL(),
+            default => null
+        };
     }
 }

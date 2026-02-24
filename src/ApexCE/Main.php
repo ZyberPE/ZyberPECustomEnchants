@@ -40,10 +40,9 @@ final class Main extends PluginBase implements Listener{
         $this->getServer()->getPluginManager()->registerEvents($this, $this);
     }
 
-    /* =======================================================
+    /* ===========================
        COMMANDS
-    ======================================================== */
-
+    ============================ */
     public function onCommand(CommandSender $sender, Command $command, string $label, array $args): bool{
 
         if(!$sender instanceof Player) return false;
@@ -80,10 +79,9 @@ final class Main extends PluginBase implements Listener{
         return true;
     }
 
-    /* =======================================================
+    /* ===========================
        BOOK CREATION
-    ======================================================== */
-
+    ============================ */
     private function createBook(string $name, int $level): Item{
 
         $book = VanillaItems::ENCHANTED_BOOK();
@@ -109,10 +107,9 @@ final class Main extends PluginBase implements Listener{
         return $book;
     }
 
-    /* =======================================================
+    /* ===========================
        APPLY BOOK SYSTEM
-    ======================================================== */
-
+    ============================ */
     public function onInventoryTransaction(InventoryTransactionEvent $event): void{
 
         $transaction = $event->getTransaction();
@@ -140,13 +137,10 @@ final class Main extends PluginBase implements Listener{
                 $player->getInventory()->removeItem($sourceItem);
 
                 if(mt_rand(1,100) <= $successRate){
-
                     $this->applyEnchant($targetItem, $name, $level);
                     $player->getInventory()->addItem($targetItem);
                     $player->sendMessage("§aEnchant applied successfully!");
-
                 }else{
-
                     if(mt_rand(1,100) <= $destroyRate){
                         $player->sendMessage("§cEnchant failed and item destroyed!");
                     }else{
@@ -154,16 +148,14 @@ final class Main extends PluginBase implements Listener{
                         $player->sendMessage("§cEnchant failed!");
                     }
                 }
-
                 return;
             }
         }
     }
 
-    /* =======================================================
+    /* ===========================
        NBT + LORE SYSTEM
-    ======================================================== */
-
+    ============================ */
     private function applyEnchant(Item &$item, string $name, int $level): void{
 
         $nbt = $item->getNamedTag();
@@ -203,10 +195,9 @@ final class Main extends PluginBase implements Listener{
         $item->setLore($lore);
     }
 
-    /* =======================================================
+    /* ===========================
        COMBAT ENCHANTS
-    ======================================================== */
-
+    ============================ */
     public function onDamage(EntityDamageByEntityEvent $event): void{
 
         $damager = $event->getDamager();
@@ -231,10 +222,9 @@ final class Main extends PluginBase implements Listener{
         }
     }
 
-    /* =======================================================
+    /* ===========================
        BLOCK ENCHANTS (SAFE)
-    ======================================================== */
-
+    ============================ */
     public function onBreak(BlockBreakEvent $event): void{
 
         $player = $event->getPlayer();
@@ -266,7 +256,7 @@ final class Main extends PluginBase implements Listener{
             return;
         }
 
-        // SAFE DRILLER
+        // SAFE Driller
         if(isset($enchants["Driller"]) && $item instanceof Pickaxe){
 
             $event->cancel();
@@ -277,16 +267,31 @@ final class Main extends PluginBase implements Listener{
             $center = $block->getPosition();
             $world = $player->getWorld();
 
+            $breakableBlocks = [
+                "Stone","Granite","Diorite","Andesite",
+                "Coal Ore","Iron Ore","Gold Ore","Copper Ore",
+                "Diamond Ore","Emerald Ore","Redstone Ore","Lapis Ore",
+                "Deepslate","Deepslate Coal Ore","Deepslate Iron Ore",
+                "Deepslate Gold Ore","Deepslate Copper Ore","Deepslate Diamond Ore",
+                "Deepslate Emerald Ore","Deepslate Redstone Ore","Deepslate Lapis Ore"
+            ];
+
             for($x = -$radius; $x <= $radius; $x++){
                 for($z = -$radius; $z <= $radius; $z++){
 
-                    $pos = $center->add($x, 0, $z);
+                    $pos = $center->add($x,0,$z);
                     $target = $world->getBlock($pos);
 
                     if($target->isAir()) continue;
+                    if($target instanceof \pocketmine\block\Bedrock) continue;
+                    if(!in_array($target->getName(), $breakableBlocks, true)) continue;
 
-                    $drops = $target->getDrops($item);
-                    if(count($drops) === 0) continue;
+                    $drops = [];
+                    try {
+                        $drops = $target->getDrops($item);
+                    } catch (\Throwable $e){
+                        continue;
+                    }
 
                     foreach($drops as $drop){
                         $player->getInventory()->addItem($drop);

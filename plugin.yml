@@ -1,16 +1,22 @@
-name: ApexCE
+name: ZyberPECustomEnchants
 main: ApexCE\Main
-version: 1.0.0
-api: 5.0.0
-author: ApexPELegitz
-description: Custom Enchants Plugin (Driller, TreeDestroyer, Lifesteal, Lightning)
-
+version: 1.0
+api: [5.0.0]
+author: ZyberPE
+description: Custom Enchants plugin with Driller, TreeDestroyer, Books, and Combat Enchants
 commands:
-  ce:
-    description: Custom Enchant main command
-    usage: "/ce give <player> <enchant> <level> | /ce givebook <player> <enchant> <level>"
-    permission: apexce.use
-
+  give:
+    description: Apply an enchant directly to the item in hand
+    usage: "/give <player> <enchant> <level>"
+    permission: apexce.give
+  givebook:
+    description: Give an enchantment book
+    usage: "/givebook <player> <enchant> <level>"
+    permission: apexce.givebook
 permissions:
-  apexce.use:
-    default: true
+  apexce.give:
+    default: op
+    description: Permission to give enchants
+  apexce.givebook:
+    default: op
+    description: Permission to give enchantment books
